@@ -1,0 +1,86 @@
+const express = require("express");
+const multer = require("multer");
+const fs = require("fs");
+const path = require("path");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegPath = require("ffmpeg-static");
+const googleTTS = require("google-tts-api");
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+ffmpeg.setFfmpegPath(ffmpegPath);
+
+const app = express();
+const PORT = 3000;
+
+const upload = multer({ dest: "uploads/" });
+app.use(express.json());
+
+app.post("/generate", upload.single("video"), async (req, res) => {
+  const text = req.body.text;
+  const videoPath = req.file.path;
+  const audioPath = `assets/voice.mp3`;
+  const subtitlePath = `subtitles/subs.srt`;
+  const outputPath = `assets/final.mp4`;
+
+  try {
+    const url = googleTTS.getAudioUrl(text, {
+      lang: "en",
+      slow: false,
+      host: "https://translate.google.com",
+    });
+
+    const audioBuffer = await fetch(url).then((r) => r.arrayBuffer());
+    fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
+
+    const subs = generateSubtitles(text);
+    fs.writeFileSync(subtitlePath, subs);
+
+    ffmpeg()
+      .input(videoPath)                       // video input
+      .input(audioPath)                       // audio input
+      .videoCodec("libx264")
+      .audioCodec("aac")
+      .outputOptions([
+        "-map 0:v:0",                         // use video from input 0
+        "-map 1:a:0",                         // use audio from input 1
+        "-shortest",                          // stop when audio/video ends
+        `-vf subtitles=${subtitlePath}`       // burn subtitles
+      ])
+      .save(outputPath)
+      .on("end", () => {
+        console.log("✅ Final video created");
+        res.download(outputPath);
+      })
+      .on("error", (err) => {
+        console.error("FFmpeg error:", err.message);
+        res.status(500).send("Video generation failed: " + err.message);
+      });
+  } catch (e) {
+    res.status(500).send("Error: " + e.message);
+  }
+});
+
+function generateSubtitles(text) {
+  const words = text.split(" ");
+  let srt = "";
+  let time = 0;
+  let index = 1;
+  for (let i = 0; i < words.length; i += 7) {
+    const chunk = words.slice(i, i + 7).join(" ");
+    const start = formatTime(time);
+    const end = formatTime(time + 2);
+    srt += `${index}\n${start} --> ${end}\n${chunk}\n\n`;
+    index++;
+    time += 2;
+  }
+  return srt;
+}
+
+function formatTime(sec) {
+  const hrs = String(Math.floor(sec / 3600)).padStart(2, "0");
+  const mins = String(Math.floor((sec % 3600) / 60)).padStart(2, "0");
+  const secs = String(Math.floor(sec % 60)).padStart(2, "0");
+  return `${hrs}:${mins}:${secs},000`;
+}
+
+app.listen(PORT, () => console.log(`🚀 Running at http://localhost:${PORT}`));
