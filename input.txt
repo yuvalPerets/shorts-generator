@@ -1,3 +1,6 @@
 This is a structured script for a YouTube short.
 It is easier to manage in a file than in the terminal.
 We will add subtitles and a voice-over automatically.
+This is a structured script for a YouTube short.
+It is easier to manage in a file than in the terminal.
+We will add subtitles and a voice-over automatically.

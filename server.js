@@ -16,21 +16,14 @@ const upload = multer({ dest: "uploads/" });
 app.use(express.json());
 
 app.post("/generate", upload.single("video"), async (req, res) => {
-  const text = req.body.text;
+  const text = fs.readFileSync("input.txt", "utf-8").replace(/\n/g, " ").trim();
   const videoPath = req.file.path;
   const audioPath = `assets/voice.mp3`;
   const subtitlePath = `subtitles/subs.srt`;
   const outputPath = `assets/final.mp4`;
 
   try {
-    const url = googleTTS.getAudioUrl(text, {
-      lang: "en",
-      slow: false,
-      host: "https://translate.google.com",
-    });
-
-    const audioBuffer = await fetch(url).then((r) => r.arrayBuffer());
-    fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
+    await createVoiceFromText(text, audioPath);
 
     const subs = generateSubtitles(text);
     fs.writeFileSync(subtitlePath, subs);
@@ -59,6 +52,34 @@ app.post("/generate", upload.single("video"), async (req, res) => {
     res.status(500).send("Error: " + e.message);
   }
 });
+
+async function createVoiceFromText(text, audioPath) {
+  const chunks = [];
+  let remaining = text;
+  while (remaining.length > 0) {
+    let chunk = remaining.slice(0, 200);
+    // Try not to split in the middle of a word
+    const lastSpace = chunk.lastIndexOf(' ');
+    if (lastSpace > 0 && remaining.length > 200) {
+      chunk = chunk.slice(0, lastSpace);
+    }
+    chunks.push(chunk);
+    remaining = remaining.slice(chunk.length).trim();
+  }
+
+  const audioBuffers = [];
+  for (const chunk of chunks) {
+    const url = googleTTS.getAudioUrl(chunk, {
+      lang: "en",
+      slow: false,
+      host: "https://translate.google.com",
+    });
+    const audioBuffer = await fetch(url).then((r) => r.arrayBuffer());
+    audioBuffers.push(Buffer.from(audioBuffer));
+  }
+  // Concatenate all buffers and write to file
+  fs.writeFileSync(audioPath, Buffer.concat(audioBuffers));
+}
 
 function generateSubtitles(text) {
   const words = text.split(" ");
