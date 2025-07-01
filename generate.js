@@ -3,7 +3,7 @@ const { exec } = require("child_process");
 const path = require("path");
 
 // Define video path
-const videoPath = "sample.mp4";
+const videoPath = "sample2.mp4";
 const videoName = path.basename(videoPath, path.extname(videoPath));
 const outputDir = path.join(__dirname, "final vedios");
 if (!fs.existsSync(outputDir)) {

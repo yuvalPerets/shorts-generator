@@ -28,16 +28,44 @@ app.post("/generate", upload.single("video"), async (req, res) => {
     const subs = generateSubtitles(text);
     fs.writeFileSync(subtitlePath, subs);
 
+    // 1. Extract original audio
+    const extractedAudio = `assets/original_audio.aac`;
+    await new Promise((resolve, reject) => {
+      ffmpeg(videoPath)
+        .noVideo()
+        .audioCodec("aac")
+        .save(extractedAudio)
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    // 2. Mix original audio (quieter) and TTS audio (normal)
+    const mixedAudio = `assets/mixed_audio.aac`;
+    await new Promise((resolve, reject) => {
+      ffmpeg()
+        .input(extractedAudio)
+        .input(audioPath)
+        .complexFilter([
+          "[0:a]volume=0.3[a0];[1:a]volume=1.0[a1];[a0][a1]amix=inputs=2:duration=longest:dropout_transition=2[aout]"
+        ])
+        .outputOptions(["-map [aout]", "-ac 2"])
+        .audioCodec("aac")
+        .save(mixedAudio)
+        .on("end", resolve)
+        .on("error", reject);
+    });
+
+    // 3. Combine video, mixed audio, and subtitles
     ffmpeg()
-      .input(videoPath)                       // video input
-      .input(audioPath)                       // audio input
+      .input(videoPath)
+      .input(mixedAudio)
       .videoCodec("libx264")
       .audioCodec("aac")
       .outputOptions([
-        "-map 0:v:0",                         // use video from input 0
-        "-map 1:a:0",                         // use audio from input 1
-        "-shortest",                          // stop when audio/video ends
-        `-vf subtitles=${subtitlePath}`       // burn subtitles
+        "-map 0:v:0",
+        "-map 1:a:0",
+        "-shortest",
+        `-vf subtitles=${subtitlePath}`
       ])
       .save(outputPath)
       .on("end", () => {
